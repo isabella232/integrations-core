@@ -35,7 +35,7 @@ def test_check(aggregator, dd_environment, get_test_instance, caplog):
     zk_check.check(get_test_instance)
     zk_check.check(get_test_instance)
 
-    skipped_metrics = extract_nan_metrics(caplog.text)
+    skipped_metrics = extract_nan_metrics(caplog.text) + ["zookeeper.jvm_memory_pool_allocated_bytes_total"]
 
     # Test metrics
     common.assert_stat_metrics(aggregator)
