@@ -116,7 +116,7 @@ def dd_environment(get_instance):
             'Starting server',
         )
     ]
-    with docker_run(compose_file, conditions=condition):
+    with docker_run(compose_file, conditions=condition, sleep=10):
         yield get_instance, {
             'docker_volumes': [
                 '{}:/conf/private_key.pem'.format(private_key),
