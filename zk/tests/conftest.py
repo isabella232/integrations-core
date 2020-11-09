@@ -145,7 +145,7 @@ def dd_environment(get_instance):
     else:
         condition = [condition_non_ssl]
 
-    with docker_run(compose_file, conditions=condition_ssl):
+    with docker_run(compose_file, conditions=condition):
         yield get_instance, {
             'docker_volumes': [
                 '{}:/conf/private_key.pem'.format(private_key),
