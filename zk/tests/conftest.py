@@ -2,12 +2,16 @@
 # All rights reserved
 # Licensed under Simplified BSD License (see LICENSE)
 import os
+import sys
+import time
 
 import pytest
 
 from datadog_checks.base.utils.common import get_docker_hostname
-from datadog_checks.dev import docker_run
+from datadog_checks.dev import RetryError, docker_run
 from datadog_checks.dev.conditions import CheckDockerLogs
+from datadog_checks.zk import ZookeeperCheck
+from datadog_checks.zk.zk import ZKConnectionFailure
 
 CHECK_NAME = 'zk'
 HOST = get_docker_hostname()
@@ -36,8 +40,6 @@ VALID_SSL_CONFIG = {
     'password': 'testpass',
 }
 
-STATUS_TYPES = ['leader', 'follower', 'observer', 'standalone', 'down', 'inactive', 'unknown']
-
 # This is different than VALID_SSL_CONFIG since the key locations are different
 VALID_SSL_CONFIG_FOR_TEST = {
     'host': HOST,
@@ -51,6 +53,8 @@ VALID_SSL_CONFIG_FOR_TEST = {
     'cert': os.path.join(HERE, 'compose', 'cert.pem'),
     'password': 'testpass',
 }
+
+STATUS_TYPES = ['leader', 'follower', 'observer', 'standalone', 'down', 'inactive', 'unknown']
 
 
 @pytest.fixture(scope="session")
@@ -96,6 +100,25 @@ def get_ssl():
 
 @pytest.fixture(scope="session")
 def dd_environment(get_instance):
+    def condition_non_ssl():
+        sys.stderr.write("Waiting for ZK to boot...\n")
+        booted = False
+        dummy_instance = {'host': HOST, 'port': PORT, 'timeout': 500}
+        for _ in range(10):
+            try:
+                out = ZookeeperCheck('zk', {}, [dummy_instance])._send_command('ruok')
+                out.seek(0)
+                if out.readline() != 'imok':
+                    raise ZKConnectionFailure()
+                booted = True
+                break
+            except ZKConnectionFailure:
+                time.sleep(1)
+
+        if not booted:
+            raise RetryError("Zookeeper failed to boot!")
+        sys.stderr.write("ZK boot complete.\n")
+
     compose_file = os.path.join(HERE, 'compose', 'zk.yaml')
     if [3, 5, 0] <= get_version() < [3, 6, 0]:
         compose_file = os.path.join(HERE, 'compose', 'zk35.yaml')
@@ -110,13 +133,19 @@ def dd_environment(get_instance):
     cert = os.path.join(HERE, 'compose', 'cert.pem')
     ca_cert = os.path.join(HERE, 'compose', 'ca_cert.pem')
 
-    condition = [
+    condition_ssl = [
         CheckDockerLogs(
             compose_file,
             'Starting server',
         )
     ]
-    with docker_run(compose_file, conditions=condition, sleep=10):
+
+    if get_ssl():
+        condition = condition_ssl
+    else:
+        condition = [condition_non_ssl]
+
+    with docker_run(compose_file, conditions=condition):
         yield get_instance, {
             'docker_volumes': [
                 '{}:/conf/private_key.pem'.format(private_key),
